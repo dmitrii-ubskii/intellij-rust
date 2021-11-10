@@ -6,6 +6,7 @@
 package org.rust.ide.console
 
 import org.rust.MockEdition
+import org.rust.UseOldResolve
 import org.rust.cargo.project.workspace.CargoWorkspace.Edition
 
 class RsConsoleCompletionTest : RsConsoleCompletionTestBase() {
@@ -133,6 +134,7 @@ class RsConsoleCompletionTest : RsConsoleCompletionTestBase() {
         mod1::frobnicate()/*caret*/
     """)
 
+    @UseOldResolve
     @MockEdition(Edition.EDITION_2018)
     fun `test child module with import`() = checkSingleCompletion("""
         mod mod1 { pub fn frobnicate() {} }
