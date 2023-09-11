@@ -5,6 +5,7 @@
 
 package org.rust.cargo.toolchain
 
+import com.intellij.execution.ExecutionException
 import com.intellij.execution.configuration.EnvironmentVariablesData
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.configurations.PtyCommandLine
@@ -21,6 +22,7 @@ import org.rust.openapiext.withWorkDirectory
 import java.io.File
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.*
 
 abstract class RsToolchainBase(val location: Path) {
     val presentableLocation: String get() = pathToExecutable(Cargo.NAME).toString()
@@ -137,11 +139,64 @@ abstract class RsToolchainBase(val location: Path) {
                 ?.firstOrNull()
             if (toolchain != null) return toolchain
 
+            if (projectDir?.let { isBazelProject(it) } == true) {
+                return RsToolchainFlavor.getApplicableFlavors()
+                    .asSequence()
+                    .flatMap { it.suggestBazelPaths(projectDir) }
+                    .mapNotNull { RsToolchainProvider.getToolchain(it.toAbsolutePath()) }
+                    .firstOrNull()
+            }
+
             return RsToolchainFlavor.getApplicableFlavors()
                 .asSequence()
                 .flatMap { it.suggestHomePaths() }
                 .mapNotNull { RsToolchainProvider.getToolchain(it.toAbsolutePath()) }
                 .firstOrNull()
+        }
+
+        private fun isBazelProject(projectDir: Path): Boolean {
+            return projectDir.fileName.toString() in listOf(".ijwb", ".clwb")
+        }
+
+        fun findToolchainInBazelProject(projectRoot: File): Path? {
+            var file = projectRoot
+            while (!file.resolve("bazel-bin").exists()) {
+                file = file.parentFile ?: return null
+            }
+            return file.resolve("bazel-bin/external").listFiles()
+                ?.findBazelRustToolchainCandidates()
+                ?.firstOrNull()
+                ?.listFiles()
+                ?.get(0)
+                ?.resolve("bin")
+                ?.toPath()
+        }
+
+        fun Array<File>.findBazelRustToolchainCandidates(): Collection<File> {
+            val prefix = when (OS.currentOS) {
+                OS.WINDOWS -> "rust_windows"
+                OS.LINUX -> "rust_linux"
+                OS.MAC -> "rust_darwin"
+            }
+            return filter { it.name.startsWith(prefix) && !it.name.endsWith("toolchains") }
+        }
+    }
+
+    enum class OS {
+        WINDOWS,
+        LINUX,
+        MAC;
+
+        companion object {
+            val currentOS: OS
+            get() {
+                val osName = System.getProperty("os.name").lowercase(Locale.ENGLISH)
+                return when {
+                    "mac" in osName || "darwin" in osName -> MAC
+                    "win" in osName -> WINDOWS
+                    else -> LINUX
+                }
+            }
         }
     }
 }

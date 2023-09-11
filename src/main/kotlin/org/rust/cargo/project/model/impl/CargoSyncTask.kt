@@ -427,6 +427,16 @@ private fun fetchStdlib(context: CargoSyncTask.SyncContext, cargoProject: CargoP
             }
         }
 
+        if (cargoProject.projectService.looksLikeBazelProject()) {
+            cargoProject.stdlibPathBazel(workingDirectory)?.let {
+                val std = StandardLibrary.fromPath(childContext.project, it.path, rustcInfo)
+                return@runWithChildProgress when (std) {
+                    null -> TaskResult.Err("invalid standard library: ${it.path}")
+                    else -> TaskResult.Ok(std)
+                }
+            }
+        }
+
         val cargoConfig = cargoProject.rawWorkspace?.cargoConfig ?: CargoConfig.DEFAULT
         val rustup = childContext.toolchain.rustup(workingDirectory)
         if (rustup == null) {

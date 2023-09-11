@@ -7,6 +7,7 @@ package org.rust.cargo.toolchain.flavors
 
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.util.io.isDirectory
+import org.rust.cargo.toolchain.RsToolchainBase
 import org.rust.cargo.toolchain.tools.Cargo
 import org.rust.cargo.toolchain.tools.Rustc
 import org.rust.cargo.util.hasExecutable
@@ -17,7 +18,21 @@ abstract class RsToolchainFlavor {
 
     fun suggestHomePaths(): Sequence<Path> = getHomePathCandidates().filter { isValidToolchainPath(it) }
 
+    fun suggestBazelPaths(projectPath: Path?): Sequence<Path> {
+        return if (projectPath == null) emptySequence() else getBazelPathCandidates(projectPath).filter { isValidToolchainPath(it) }
+    }
+
     protected abstract fun getHomePathCandidates(): Sequence<Path>
+
+    private fun getBazelPathCandidates(projectPath: Path): Sequence<Path> {
+        if (projectPath.fileName.toString() in listOf(".ijwb", ".clwb")) { // Bazel project root
+            val sourcesRoot = projectPath.parent
+            val toolchainPath = RsToolchainBase.findToolchainInBazelProject(sourcesRoot.toFile()) ?: return emptySequence()
+            return sequenceOf(toolchainPath)
+        } else {
+            return emptySequence()
+        }
+    }
 
     /**
      * Flavor is added to result in [getApplicableFlavors] if this method returns true.

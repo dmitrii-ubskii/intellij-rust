@@ -51,6 +51,7 @@ import org.rust.cargo.project.settings.rustSettings
 import org.rust.cargo.project.settings.toolchain
 import org.rust.cargo.project.toolwindow.CargoToolWindow.Companion.initializeToolWindow
 import org.rust.cargo.project.workspace.*
+import org.rust.cargo.project.workspace.StandardLibrary.Companion.findStdlibInBazelProject
 import org.rust.cargo.runconfig.command.workingDirectory
 import org.rust.cargo.toolchain.RsToolchainBase
 import org.rust.cargo.util.AutoInjectedCrates
@@ -67,6 +68,7 @@ import org.rust.stdext.applyWithSymlink
 import org.rust.stdext.exhaustive
 import org.rust.stdext.mapNotNullToSet
 import org.rust.taskQueue
+import java.io.File
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
@@ -246,20 +248,33 @@ open class CargoProjectsServiceImpl(
         modifyProjects { doRefresh(project, it) }
 
     override fun discoverAndRefresh(): CompletableFuture<out List<CargoProject>> {
-        val guessManifest = suggestManifests().firstOrNull()
-            ?: return CompletableFuture.completedFuture(projects.currentState)
+        val guessManifests = suggestManifests()
 
         return modifyProjects { projects ->
-            if (hasAtLeastOneValidProject(projects)) return@modifyProjects CompletableFuture.completedFuture(projects)
-            doRefresh(project, listOf(CargoProjectImpl(guessManifest.pathAsPath, this)))
+            doRefresh(project, guessManifests.map { CargoProjectImpl(it.pathAsPath, this) }.toList())
         }
     }
 
-    override fun suggestManifests(): Sequence<VirtualFile> =
-        project.modules
-            .asSequence()
-            .flatMap { ModuleRootManager.getInstance(it).contentRoots.asSequence() }
-            .mapNotNull { it.findChild(CargoConstants.MANIFEST_FILE) }
+    override fun suggestManifests(): Sequence<VirtualFile> {
+        return sequence {
+            for (module in project.modules) {
+                for (contentRoot in ModuleRootManager.getInstance(module).contentRoots.asSequence()) {
+                    yieldAll(contentRoot.findChildrenRecursively(CargoConstants.MANIFEST_FILE, PROJECT_SEARCH_EXCLUDES))
+                }
+            }
+        }
+    }
+
+    private fun VirtualFile.findChildrenRecursively(name: String, excludeDirs: Set<Regex>): Collection<VirtualFile> {
+        return listOfNotNull(findChild(name)) + children
+            .filterNot { excludeDirs.any { regex -> regex.matches(it.name) } }
+            .flatMap { it.findChildrenRecursively(name, excludeDirs) }
+    }
+
+    fun looksLikeBazelProject(): Boolean {
+        return project.projectFilePath?.contains(".ijwb") == true
+            || project.projectFilePath?.contains(".clwb") == true
+    }
 
     /**
      * Modifies [CargoProject.userDisabledFeatures] that eventually affects [CargoWorkspace.Package.featureState].
@@ -522,7 +537,7 @@ open class CargoProjectsServiceImpl(
 
 data class CargoProjectImpl(
     override val manifest: Path,
-    private val projectService: CargoProjectsServiceImpl,
+    val projectService: CargoProjectsServiceImpl,
     override val userDisabledFeatures: UserDisabledFeatures = UserDisabledFeatures.EMPTY,
     val rawWorkspace: CargoWorkspace? = null,
     private val stdlib: StandardLibrary? = null,
@@ -579,6 +594,11 @@ data class CargoProjectImpl(
         return workspace.findPackageByName(AutoInjectedCrates.STD) != null &&
             workspace.findPackageByName(AutoInjectedCrates.CORE) != null &&
             possiblePackages.any { workspace.findPackageByName(it) != null }
+    }
+
+    fun stdlibPathBazel(workingDirectory: Path): File? {
+        val stdlibRoot = findStdlibInBazelProject(workingDirectory.toFile())
+        return stdlibRoot?.toFile()?.takeIf { it.exists() }
     }
 
     fun withStdlib(result: TaskResult<StandardLibrary>): CargoProjectImpl = when (result) {
@@ -683,6 +703,8 @@ private fun setupProjectRoots(project: Project, cargoProjects: List<CargoProject
         }
     }
 }
+
+private val PROJECT_SEARCH_EXCLUDES = setOf(Regex("bazel-.*"), Regex("target"))
 
 private fun VirtualFile.setupContentRoots(project: Project, setup: ContentEntryWrapper.(VirtualFile) -> Unit) {
     val packageModule = ModuleUtilCore.findModuleForFile(this, project) ?: return
