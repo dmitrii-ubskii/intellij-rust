@@ -180,6 +180,10 @@ abstract class RsToolchainBase(val location: Path) {
             }
             return filter { it.name.startsWith(prefix) && !it.name.endsWith("toolchains") }
         }
+
+        fun Array<File>.findBazelRustAnalyzerToolchainCandidates(): Collection<File> {
+            return filter { it.name.startsWith("rust_analyzer_") && it.name.endsWith("_tools") }
+        }
     }
 
     enum class OS {

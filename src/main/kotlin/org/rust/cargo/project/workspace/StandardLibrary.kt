@@ -20,6 +20,7 @@ import org.rust.cargo.project.model.ProcessProgressListener
 import org.rust.cargo.project.model.RustcInfo
 import org.rust.cargo.project.settings.toolchain
 import org.rust.cargo.toolchain.RsToolchainBase.Companion.findBazelRustToolchainCandidates
+import org.rust.cargo.toolchain.RsToolchainBase.Companion.findBazelRustAnalyzerToolchainCandidates
 import org.rust.cargo.toolchain.impl.CargoMetadata
 import org.rust.cargo.toolchain.impl.CargoMetadataException
 import org.rust.cargo.toolchain.impl.RustcVersion
@@ -194,7 +195,7 @@ data class StandardLibrary(
             // bazel-{projectname} symlinks are transient, so resolve real path to get a link to the rustc sources
             val externalReposRealPath = file.resolve("bazel-${file.name}").toPath().toRealPath().parent.parent.resolve("external")
             return externalReposRealPath.toFile().listFiles()
-                ?.findBazelRustToolchainCandidates()
+                ?.findBazelRustAnalyzerToolchainCandidates()
                 ?.map { it.resolve("lib/rustlib/src/library") }
                 ?.firstOrNull { it.exists() }
                 ?.toPath()
